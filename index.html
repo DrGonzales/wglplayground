@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Audio-gesteuertes Particle System mit Bildwechsel</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        body { margin: 0; overflow: hidden; display: flex; align-items: center; justify-content: center; height: 100vh; background-color: #111; flex-direction: column; }
+        canvas { display: block; }
+        button { position: absolute; top: 20px; padding: 10px 20px; font-size: 16px; cursor: pointer; }
+    </style>
+</head>
+<body>
+
+<button id="startButton">Start</button>
+
+<script>
+    let scene, camera, renderer, particles;
+    let analyser, audioContext, frequencyData, audioSource;
+    let started = false;
+    let basePositions = [];
+    let imageIndex = 0;
+    let images = ['1.jpg', '2.jpg', '3.jpg', '4.jpg', '5.jpg', '6.jpg']; // Liste der Bilder
+    let switchInterval = 50000; // Zeit in ms (10s)
+    let time = 0;
+    function init() {
+        scene = new THREE.Scene();
+        camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.05, 5000);
+        camera.position.z = 400;
+
+        renderer = new THREE.WebGLRenderer();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        loadImage(images[imageIndex]);
+    }
+
+    function loadImage(url) {
+        const loader = new THREE.TextureLoader();
+        loader.setCrossOrigin("anonymous"); 
+        loader.load(url, (texture) => {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            const w = 1200;
+            canvas.width = w;
+            canvas.height = (texture.image.height / texture.image.width) * w;
+               if(texture.image.height > texture.image.width){
+                canvas.height = (texture.image.width / texture.image.height ) * w;
+            }
+            ctx.drawImage(texture.image, 0, 0, canvas.width, canvas.height);
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+            createParticleSystem(imageData, canvas.width, canvas.height);
+        });
+    }
+
+    function createParticleSystem(imageData, width, height) {
+        if (particles) scene.remove(particles);
+
+        const geometry = new THREE.BufferGeometry();
+        const positions = [];
+        const colors = [];
+        const scale = 0.5; // Größe der Partikel-Anordnung
+
+        for (let y = 0; y < height; y++) {
+            for (let x = 0; x < width; x++) {
+                const index = (y * width + x) * 4;
+                const r = imageData[index] / 255;
+                const g = imageData[index + 1] / 255;
+                const b = imageData[index + 2] / 255;
+                const brightness = (r + g + b) / 3;
+                let z = brightness * 20;
+                //let z = 0;
+                positions.push((x - width / 2) * scale, (y - height / 2) * -scale, z * scale);
+                colors.push(r, g, b);
+            }
+        }
+
+        basePositions = [...positions]; // Speichert ursprüngliche Positionen für Audio-Modifikation
+
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+        geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+
+        const material = new THREE.PointsMaterial({ size: 0.5, vertexColors: true });
+        particles = new THREE.Points(geometry, material);
+        scene.add(particles);
+    }
+
+    function loadAudio(url) {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        fetch(url)
+            .then(response => response.arrayBuffer())
+            .then(data => audioContext.decodeAudioData(data))
+            .then(buffer => {
+                audioSource = audioContext.createBufferSource();
+                audioSource.buffer = buffer;
+                audioSource.loop = true; 
+                analyser = audioContext.createAnalyser();
+                analyser.fftSize = 512;
+                frequencyData = new Uint8Array(analyser.frequencyBinCount);
+
+                audioSource.connect(analyser);
+                analyser.connect(audioContext.destination);
+                audioSource.start();
+            })
+            .catch(error => console.error('Fehler beim Laden der Audiodatei:', error));
+    }
+
+    function updateParticlesWithAudio(time) {
+        if (!analyser || !particles) return;
+
+        analyser.getByteFrequencyData(frequencyData);
+        
+        let positionsArray = particles.geometry.attributes.position.array;
+        const totalParticles = positionsArray.length / 3;
+        
+        for (let i = 0; i < totalParticles; i++) {
+            let index = i * 3;
+            let x = basePositions[index];
+            let y = basePositions[index + 1];
+            let baseZ = basePositions[index + 2];
+
+            // Berechnet den Frequenzindex basierend auf der Position des Partikels (x, y)
+            let freqIndex = Math.floor((Math.abs(x) + Math.abs(y)) / 10) % frequencyData.length;
+            let audioValue = frequencyData[freqIndex] / 256;  // Wert zwischen 0 und 1
+
+            // Je weiter außen, desto weniger Einfluss durch das Audio
+            let distanceFactor = 1 - Math.min(1, Math.sqrt(x * x + y * y) / (600 * audioValue) );
+
+            // Z-Wert basierend auf Audio-Frequenz ändern
+            positionsArray[index + 2] = baseZ + audioValue * 100 * distanceFactor;
+            positionsArray[index] = x + distanceFactor * 100; // X-Veränderung
+            positionsArray[index + 1] = y + distanceFactor * 100; // Y-Veränderung
+        }
+
+        particles.geometry.attributes.position.needsUpdate = true;
+       
+    }
+
+    function changeImage() {
+        imageIndex = (imageIndex + 1) % images.length; // Wechselt zum nächsten Bild
+        loadImage(images[imageIndex]);
+    }
+
+    function animate() {
+        requestAnimationFrame(animate);
+        time += 0.02;
+        if (particles) {
+            updateParticlesWithAudio(time);
+
+            particles.rotation.y += 0.002;
+            particles.rotation.x += 0.007;
+        }
+
+        renderer.render(scene, camera);
+    }
+
+    // Start-Button für Benutzerinteraktion
+    document.getElementById('startButton').addEventListener('click', () => {
+        if (!started) {
+            started = true;
+            document.getElementById('startButton').style.display = 'none';
+            loadAudio('audio.mp3');
+            animate();
+            setInterval(changeImage, switchInterval); // Wechselt alle n Sekunden das Bild
+        }
+    });
+
+    window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    init();
+</script>
+
+</body>
+</html>
