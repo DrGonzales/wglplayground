@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Audio-gesteuertes Particle System mit Bildwechsel</title>
+    <title>Von wegen ........!</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <style>
         body { margin: 0; overflow: hidden; display: flex; align-items: center; justify-content: center; height: 100vh; background-color: #111; flex-direction: column; }
@@ -21,8 +21,8 @@
     let started = false;
     let basePositions = [];
     let imageIndex = 0;
-    let images = ['1.jpg', '2.jpg', '3.jpg', '4.jpg', '5.jpg', '6.jpg']; // Liste der Bilder
-    let switchInterval = 50000; // Zeit in ms (10s)
+    let images = ['1.jpg', '2.jpg', '3.jpg', '4.jpg', '5.jpg', '6.jpg']; // Liste  Bilder
+    let switchInterval = 50000;
     let time = 0;
     function init() {
         scene = new THREE.Scene();
@@ -138,7 +138,7 @@
     }
 
     function changeImage() {
-        imageIndex = (imageIndex + 1) % images.length; // Wechselt zum nächsten Bild
+        imageIndex = (imageIndex + 1) % images.length; 
         loadImage(images[imageIndex]);
     }
 
@@ -155,14 +155,13 @@
         renderer.render(scene, camera);
     }
 
-    // Start-Button für Benutzerinteraktion
     document.getElementById('startButton').addEventListener('click', () => {
         if (!started) {
             started = true;
             document.getElementById('startButton').style.display = 'none';
             loadAudio('audio.mp3');
             animate();
-            setInterval(changeImage, switchInterval); // Wechselt alle n Sekunden das Bild
+            setInterval(changeImage, switchInterval); 
         }
     });
 
